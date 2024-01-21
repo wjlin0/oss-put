@@ -1,0 +1,49 @@
+name: 自动发布
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # 获取完整的历史记录
+
+      - name: 获取上一个标签
+        id: prev_tag
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          echo "上一个标签: $PREV_TAG"
+          echo "::set-output name=prev_tag::$PREV_TAG"
+
+      - name: 生成Changelog
+        id: changelog
+        run: |
+          CURRENT_TAG=${GITHUB_REF#refs/tags/}
+          PREV_TAG=${{ steps.prev_tag.outputs.prev_tag }}
+          if [ -z "$PREV_TAG" ]; then
+            # 如果没有上一个标签，则获取整个历史记录
+            CHANGELOG=$(git log --pretty=format:"%h %s")
+          else
+            # 否则获取上一个标签到当前标签的提交记录
+            CHANGELOG=$(git log $PREV_TAG..$CURRENT_TAG --pretty=format:"%h %s")
+          fi
+          echo "Changelog:"
+          echo "$CHANGELOG"
+          echo "::set-output name=changelog::$CHANGELOG"
+
+      - name: 创建发布
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
